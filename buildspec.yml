@@ -1,0 +1,20 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+    - npm install
+  build:
+    commands:
+    - cp .env.${STAGE} .env.production.local
+    - export REACT_APP_RELEASE=${CODEBUILD_RESOLVED_SOURCE_VERSION}
+    - npm run build
+
+artifacts:
+  base-directory: build/
+  files:
+  - '**/*'
+
+cache:
+  paths:
+  - 'node_modules/**/*'

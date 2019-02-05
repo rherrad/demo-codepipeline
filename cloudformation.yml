@@ -1,0 +1,354 @@
+Parameters:
+  RepositoryOwner:
+    Type: String
+    Default: sysless
+  RepositoryName:
+    Type: String
+    Default: demo-codepipeline
+  BranchName:
+    Type: String
+    Default: master
+  PollForSourceChanges:
+    Type: String
+    Default: false
+    AllowedValues:
+    - true
+    - false
+  GithubToken:
+    Type: String
+    NoEcho: true
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "GitHub Configuration"
+      Parameters:
+      - RepositoryOwner
+      - RepositoryName
+      - BranchName
+      - PollForSourceChanges
+      - GithubToken
+
+Resources:
+  DevBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: 'index.html'
+
+  DevBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DevBucket
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal: '*'
+          Action:
+          - 's3:GetObject'
+          Resource:
+          - !Sub 'arn:aws:s3:::${DevBucket}/*'
+
+  ProdBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: 'index.html'
+
+  ProdBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProdBucket
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal: '*'
+          Action:
+          - 's3:GetObject'
+          Resource:
+          - !Sub 'arn:aws:s3:::${ProdBucket}/*'
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+
+  CodePipelineServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service:
+            - "codepipeline.amazonaws.com"
+          Action:
+          - "sts:AssumeRole"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService"
+      Path: "/"
+      Policies:
+      - PolicyName: "CodePipelineServiceRolePolicy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "s3:GetObject"
+            - "s3:GetObjectVersion"
+            - "s3:GetBucketVersioning"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "s3:PutObject"
+            Resource:
+            - "arn:aws:s3:::codepipeline*"
+            - "arn:aws:s3:::elasticbeanstalk*"
+          - Effect: "Allow"
+            Action:
+            - "codecommit:CancelUploadArchive"
+            - "codecommit:GetBranch"
+            - "codecommit:GetCommit"
+            - "codecommit:GetUploadArchiveStatus"
+            - "codecommit:UploadArchive"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "codedeploy:CreateDeployment"
+            - "codedeploy:GetApplicationRevision"
+            - "codedeploy:GetDeployment"
+            - "codedeploy:GetDeploymentConfig"
+            - "codedeploy:RegisterApplicationRevision"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "elasticbeanstalk:*"
+            - "ec2:*"
+            - "elasticloadbalancing:*"
+            - "autoscaling:*"
+            - "cloudwatch:*"
+            - "s3:*"
+            - "sns:*"
+            - "cloudformation:*"
+            - "rds:*"
+            - "sqs:*"
+            - "ecs:*"
+            - "iam:PassRole"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "lambda:InvokeFunction"
+              - "lambda:ListFunctions"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "opsworks:CreateDeployment"
+            - "opsworks:DescribeApps"
+            - "opsworks:DescribeCommands"
+            - "opsworks:DescribeDeployments"
+            - "opsworks:DescribeInstances"
+            - "opsworks:DescribeStacks"
+            - "opsworks:UpdateApp"
+            - "opsworks:UpdateStack"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "cloudformation:CreateStack"
+            - "cloudformation:DeleteStack"
+            - "cloudformation:DescribeStacks"
+            - "cloudformation:UpdateStack"
+            - "cloudformation:CreateChangeSet"
+            - "cloudformation:DeleteChangeSet"
+            - "cloudformation:DescribeChangeSet"
+            - "cloudformation:ExecuteChangeSet"
+            - "cloudformation:SetStackPolicy"
+            - "cloudformation:ValidateTemplate"
+            - "iam:PassRole"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+            - "codebuild:BatchGetBuilds"
+            - "codebuild:StartBuild"
+            Resource: "*"
+
+  CodeBuildServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service:
+            - "codebuild.amazonaws.com"
+          Action:
+          - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+      - PolicyName: "CodeBuildServiceRolePolicy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            Resource:
+            - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${RepositoryName}-${BranchName}-dev"
+            - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${RepositoryName}-${BranchName}-dev:*"
+            - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${RepositoryName}-${BranchName}-prod"
+            - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${RepositoryName}-${BranchName}-prod:*"
+          - Effect: "Allow"
+            Action:
+            - 's3:ListBucket'
+            Resource:
+            - !Sub "arn:aws:s3:::${ArtifactsBucket}"
+          - Effect: "Allow"
+            Action:
+            - 's3:GetObject'
+            - 's3:GetObjectVersion'
+            - 's3:PutObject'
+            - 's3:DeleteObject'
+            Resource:
+            - !Sub "arn:aws:s3:::${ArtifactsBucket}/*"
+
+  ProjectDev:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${RepositoryName}-${BranchName}-dev
+      TimeoutInMinutes: 5
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Type: S3
+        Location: !Sub "${ArtifactsBucket}/cache"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:8.11.0
+        EnvironmentVariables:
+        - Name: STAGE
+          Value: dev
+          Type: PLAINTEXT
+      Source:
+        Type: CODEPIPELINE
+
+  ProjectProd:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${RepositoryName}-${BranchName}-prod
+      TimeoutInMinutes: 5
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Type: S3
+        Location: !Sub "${ArtifactsBucket}/cache"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:8.11.0
+        EnvironmentVariables:
+        - Name: STAGE
+          Value: prod
+          Type: PLAINTEXT
+      Source:
+        Type: CODEPIPELINE
+
+  Pipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: !Sub ${RepositoryName}-${BranchName}
+      RestartExecutionOnUpdate: false
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      Stages:
+      - Name: Source
+        Actions:
+        - Name: Github
+          ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Provider: GitHub
+            Version: '1'
+          Configuration:
+            Owner: !Ref RepositoryOwner
+            Repo: !Ref RepositoryName
+            PollForSourceChanges: !Ref PollForSourceChanges
+            Branch: !Ref BranchName
+            OAuthToken: !Ref GithubToken
+          OutputArtifacts:
+          - Name: Source
+      - Name: Dev
+        Actions:
+        - Name: Build
+          RunOrder: 1
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName: !Ref ProjectDev
+          InputArtifacts:
+          - Name: Source
+          OutputArtifacts:
+          - Name: VersionDev
+        - Name: Deploy
+          RunOrder: 2
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: S3
+            Version: '1'
+          Configuration:
+            BucketName: !Ref DevBucket
+            Extract: true
+          InputArtifacts:
+          - Name: VersionDev
+      - Name: Prod
+        Actions:
+        - Name: Approve
+          RunOrder: 1
+          ActionTypeId:
+            Category: Approval
+            Owner: AWS
+            Provider: Manual
+            Version: '1'
+          Configuration:
+            CustomData: Release to production
+        - Name: Build
+          RunOrder: 2
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName: !Ref ProjectProd
+          InputArtifacts:
+          - Name: Source
+          OutputArtifacts:
+          - Name: VersionProd
+        - Name: Deploy
+          RunOrder: 3
+          ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: S3
+            Version: '1'
+          Configuration:
+            BucketName: !Ref ProdBucket
+            Extract: true
+          InputArtifacts:
+          - Name: VersionProd
+
+Outputs:
+  DevWebsite:
+    Value: !GetAtt DevBucket.WebsiteURL
+  ProdWebsite:
+    Value: !GetAtt ProdBucket.WebsiteURL
